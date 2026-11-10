@@ -1,4 +1,4 @@
-# CONSTELLATION
+# PoP.bin: Proof of Presence
 
 Team game for the Breakpoint 2026 badge: chains of badges mine hashes by standing together. The design doc is in `DESIGN.md`.
 
@@ -10,12 +10,12 @@ tools/    badge_sim.lua: headless smoke test of the badge app (not shipped)
 
 ## Server
 
-Live at **https://constellation-sooty.vercel.app** (Vercel project `constellation`, Bun runtime, Turso for storage).
+Live at **https://pop-bin.vercel.app** (Vercel project `pop-bin`, Bun runtime, Turso for storage).
 
 ```sh
 cd server && bun install
 bun test                                   # scoring, auth, joins, demo isolation, replay, epoch claim
-ADMIN_PASSWORD=pw bun src/server.ts        # local, stores in ./constellation.db
+ADMIN_PASSWORD=pw bun src/server.ts        # local, stores in ./pop-bin.db
 vercel deploy --prod                       # from server/
 ```
 
@@ -23,10 +23,10 @@ No timers on serverless: the first request after each epoch boundary claims it (
 
 | env | |
 |---|---|
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | set by the Turso Marketplace integration (local default: `file:constellation.db`, or `DB_URL`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | set by the Turso Marketplace integration (local default: `file:pop-bin.db`, or `DB_URL`) |
 | `ADMIN_PASSWORD` | basic-auth password for `/admin` (unset = admin disabled). Production value is in `server/.env.admin` (gitignored) |
 | `PUBLIC_ORIGIN` | public `https://` origin. The badge signature covers the URL, and Vercel's internal `req.url` differs |
-| `APP_ID` | store app id (default `constellation`) |
+| `APP_ID` | store app id (default `pop-bin`) |
 
 Every tunable in §8 can be edited live at `/admin`.
 

@@ -32,7 +32,7 @@ function T.dialog(lines, icon)
   local x, y, w, h = 30, 36, 260, 140
   bevel(x, y, w, h)
   ui.rect(x + 4, y + 4, w - 8, 16, { color = T.GREEN })
-  T.text(x + 8, y + 6, "CONSTLN.EXE", T.BLACK)
+  T.text(x + 8, y + 6, "POP.BIN", T.BLACK)
   ui.rect(x + w - 20, y + 6, 12, 12, { color = T.BLACK })
   T.text(x + w - 17, y + 6, "x", T.GREEN)
   local err = icon ~= "i"

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 
-process.env.DB_URL = `file:${require('node:os').tmpdir()}/constellation-test-${Date.now()}.db`;
+process.env.DB_URL = `file:${require('node:os').tmpdir()}/pop-bin-test-${Date.now()}.db`;
 const { keys } = await import('../src/auth');
 const { handleV1, APP_ID, normalize } = await import('../src/api');
 const { runEpoch, canonical, hashrate, fmtRate, fmtHashes, roundAt, lastEndedRound, parseState } = await import('../src/game');

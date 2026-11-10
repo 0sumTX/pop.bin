@@ -1,6 +1,6 @@
--- CONSTELLATION: stand together, mine hashes. Design doc: DESIGN.md.
+-- PoP.bin (Proof of Presence): stand with your chain, mine together. Design doc: DESIGN.md.
 local DEMO_LOCAL = false   -- RELEASE CHECKLIST: must be false in every published version (§9)
-local HOST = "https://constellation-sooty.vercel.app"   -- also in app.json "hosts"
+local HOST = "https://pop-bin.vercel.app"   -- also in app.json "hosts"
 local GRACE_BOOT, GRACE_LOST = 8000, 30000
 
 local T = require("lib.theme")

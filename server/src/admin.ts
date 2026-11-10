@@ -91,12 +91,12 @@ async function page(msg: string | null): Promise<string> {
   const chains = sections.join('') || '<p>No chains yet.</p>';
   const cfgRows = Object.keys(DEFAULTS).map((k) =>
     `<tr><td>${k}</td><td>${form('config', `<input type=hidden name=key value=${k}><input name=value value="${esc(JSON.stringify(c[k as keyof typeof c]))}">`, 'set')}</td></tr>`).join('');
-  return `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>CONSTLN admin</title>
+  return `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>PoP.bin admin</title>
 <style>body{background:#000;color:#00FF41;font:14px ui-monospace,monospace;margin:16px;max-width:960px}
 input,button{background:#000;color:#00FF41;border:1px solid #00802A;font:inherit;padding:2px 6px}button{cursor:pointer}
 button.d{color:#FF2A2A;border-color:#FF2A2A}form{display:inline-block;margin:2px}td{padding:2px 8px;vertical-align:top}
 section{border:1px solid #00802A;padding:8px;margin:8px 0}.demo{color:#FFB000}.msg{color:#FF2A2A}code{color:#fff}.row{margin-top:6px}</style>
-<h1>&gt; CONSTLN.EXE ADMIN</h1>${msg ? `<p class=msg>${esc(msg)}</p>` : ''}
+<h1>&gt; POP.BIN ADMIN</h1>${msg ? `<p class=msg>${esc(msg)}</p>` : ''}
 <h2>Demo</h2><div class=row>${form('config', `<input type=hidden name=key value=DEMO_ENABLED><input type=hidden name=value value=${!c.DEMO_ENABLED}>`, c.DEMO_ENABLED ? 'turn demo OFF' : 'turn demo ON')}
 ${form('demo_badges', `<input name=value size=40 value="${esc(c.DEMO_BADGES.join(', '))}" placeholder="badge ids, comma separated">`, 'set DEMO_BADGES')}
 ${form('wipe_demo', '', 'wipe all demo chains', true)}</div>
@@ -108,7 +108,7 @@ ${form('wipe_demo', '', 'wipe all demo chains', true)}</div>
 export async function handleAdmin(req: Request, ip: string): Promise<Response> {
   const ok = authed(req, ip);
   if (ok === 'locked') return new Response('too many attempts, wait a minute', { status: 429 });
-  if (!ok) return new Response('auth required', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="constellation"' } });
+  if (!ok) return new Response('auth required', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="pop-bin"' } });
   const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' };
   if (req.method === 'POST') {
     // Basic auth rides along on cross-site form posts, so require a same-origin Origin header.

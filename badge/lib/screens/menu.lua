@@ -39,7 +39,7 @@ return function(G)
     elseif i == 3 then
       ui.clear()
       ui.bg(T.BLACK)
-      T.dialog({ "CONSTELLATION v0.1", "STAND TOGETHER.", "MINE HASHES.", "PRESS SELECT IN ROUNDS." }, "i")
+      T.dialog({ "PoP.bin: Proof of", "Presence v0.1", "STAND WITH YOUR CHAIN.", "MINE TOGETHER." }, "i")
       about_open = true
     elseif i == 4 then
       G.go("demo")

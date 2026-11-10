@@ -3,7 +3,7 @@ import { fromBadge } from './auth';
 import { addMember, addMemberStmts, all, batch, cfg, one, q, removeMember, run, type Chain, type Config } from './db';
 import { fmtHashes, maybeEpoch, roundAt, stateFor, type NearbyEntry } from './game';
 
-export const APP_ID = process.env.APP_ID ?? 'constellation';
+export const APP_ID = process.env.APP_ID ?? 'pop-bin';
 const MAX_BODY = 4096;
 
 interface Caller { badge: string; user: string; demo: boolean; body: Record<string, unknown>; now: number; c: Config }

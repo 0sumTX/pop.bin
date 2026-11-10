@@ -181,7 +181,7 @@ check(W.objs <= 64, "object budget held")
 -- 2. Real path, Wi-Fi off: fatal dialog, SELECT exits.
 W = new_world({ id = "7K2Q9M", owner = "@tester", online = false, wifi = "off" })
 W.tick(200)
-check(W.has("CONSTLN.EXE") and W.has("WI%-FI IS OFF"), "Wi-Fi off -> Win95 fatal dialog")
+check(W.has("POP%.BIN") and W.has("WI%-FI IS OFF"), "Wi-Fi off -> Win95 fatal dialog")
 W.key("select")
 check(W.exited, "SELECT on the fatal dialog exits")
 
@@ -190,7 +190,7 @@ W = new_world({ id = "7K2Q9M", owner = "@tester", online = false, wifi = "connec
 W.tick(1000)
 check(W.has("DIALING IN"), "connecting -> DIALING IN")
 W.tick(8000)
-check(W.has("CONSTLN.EXE"), "no server after 8 s -> fatal")
+check(W.has("POP%.BIN"), "no server after 8 s -> fatal")
 
 -- 4. Real path, online but unclaimed.
 W = new_world({ id = "7K2Q9M", owner = nil, online = true })
@@ -218,5 +218,5 @@ W.online = false
 W.tick(2000)
 check(W.has("SIGNAL LOST. RETRY"), "dropout countdown")
 W.tick(29000)
-check(W.has("CONSTLN.EXE"), "dropout -> fatal after 30 s")
+check(W.has("POP%.BIN"), "dropout -> fatal after 30 s")
 print("all badge checks passed")

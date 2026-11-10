@@ -54,7 +54,7 @@ let ready: Promise<void> | null = null;
 async function conn(): Promise<Client> {
   if (!client) {
     client = createClient({
-      url: process.env.TURSO_DATABASE_URL ?? process.env.DB_URL ?? 'file:constellation.db',
+      url: process.env.TURSO_DATABASE_URL ?? process.env.DB_URL ?? 'file:pop-bin.db',
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
   }

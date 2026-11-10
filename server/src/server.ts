@@ -15,7 +15,7 @@ const server = Bun.serve({
         const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || srv.requestIP(req)?.address || '?';
         return await handleAdmin(req, ip);
       }
-      if (path === '/health' || path === '/') return new Response('constellation ok');
+      if (path === '/health' || path === '/') return new Response('pop-bin ok');
       return new Response('not found', { status: 404 });
     } catch (e) {
       console.error('request failed', req.method, path, e);
@@ -23,4 +23,4 @@ const server = Bun.serve({
     }
   },
 });
-console.info(`constellation listening on :${server.port}`);
+console.info(`pop-bin listening on :${server.port}`);

@@ -1,8 +1,24 @@
-# CONSTELLATION — Design Doc
+# PoP.bin — Design Doc
 
 A team game for the Solana Breakpoint 2026 (BP26) conference badge. Teams ("chains") of players ("blocks") mine points ("hashes") by physically standing together. The badge detects nearby teammates over its radio, draws them as a constellation, and a server scores every chain every 10 seconds.
 
-Working title: **CONSTELLATION**. Everything here is a starting point; numbers marked *(tunable)* live in server config so they can change at the venue without republishing the app.
+Name: **PoP.bin**, short for **Proof of Presence** (see Naming below). Everything here is a starting point; numbers marked *(tunable)* live in server config so they can change at the venue without republishing the app.
+
+### Naming
+
+The working title was CONSTELLATION; the final name is PoP.bin. "Constellation" remains the name of the main star screen (the view), not the app.
+
+| | Value |
+|---|---|
+| App name | PoP.bin (Proof of Presence) |
+| Store summary | Stand with your chain. Mine together. |
+| App id | `pop-bin` (matches the repo; also the server's `APP_ID`) |
+| Store name | PoP.bin |
+| Dialog title | `POP.BIN` (the store compiles our Lua into a file named `code.bin`, so `.BIN` is the honest extension, in Win95 8.3 style) |
+| About screen | PoP.bin: Proof of Presence v0.1 |
+| Server host | `pop-bin.vercel.app` (Vercel project `pop-bin`) |
+| Main star screen | Constellation |
+| In-game terms (unchanged) | chains, blocks, genesis block, links, orphaned blocks, hashrate, hashes, epochs, consensus rounds |
 
 ---
 
@@ -202,7 +218,7 @@ On launch after the gate, call `GET /v1/me` so a badge that lost its `storage` r
 
 ### 4.2 Screens
 
-**0. Gate** (built). `badge.online()` → straight through, no screen. Wi-Fi off/failed → fatal dialog. Still connecting → "> DIALING IN..." for up to 8 s, then pass or fail. Online but unclaimed → fatal dialog. Mid-game dropout → red "SIGNAL LOST. RETRY 27s" countdown for 30 s *(tunable)*, then fatal dialog. Fatal dialog: Win95 window titled `CONSTLN.EXE`, red X icon, bevelled frame, OK button, red blinking LEDs; SELECT/CANCEL exits.
+**0. Gate** (built). `badge.online()` → straight through, no screen. Wi-Fi off/failed → fatal dialog. Still connecting → "> DIALING IN..." for up to 8 s, then pass or fail. Online but unclaimed → fatal dialog. Mid-game dropout → red "SIGNAL LOST. RETRY 27s" countdown for 30 s *(tunable)*, then fatal dialog. Fatal dialog: Win95 window titled `POP.BIN`, red X icon, bevelled frame, OK button, red blinking LEDs; SELECT/CANCEL exits.
 
 **1. Chains nearby.** A `ui.list` of chains heard via heartbeats in the last ~10 s, strongest signal first: title = chain name, sub = "3/8 BLOCKS", right = signal bars. The last item is always "+ CREATE NEW CHAIN". Empty state: "> NO CHAINS IN RANGE". SELECT on a chain → send a join request to the nearest member of it → JOINING.
 

@@ -1,5 +1,5 @@
 {
-  "name": "constellation-server",
+  "name": "pop-bin-server",
   "private": true,
   "type": "module",
   "scripts": {
