@@ -1,0 +1,12 @@
+{
+  "id": "constellation",
+  "name": "Constellation",
+  "version": "0.1.0",
+  "author": "@0sumTX",
+  "summary": "Stand together, mine hashes. A team game for chains of badges.",
+  "icon": "star",
+  "accent": "00FF41",
+  "category": "games",
+  "permissions": ["wifi", "led", "mesh", "http"],
+  "hosts": ["constellation.example.com"]
+}
