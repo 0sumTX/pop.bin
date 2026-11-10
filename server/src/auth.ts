@@ -1,9 +1,10 @@
 // Badge request verification. Copied from the Lua API docs ("What your server receives"),
-// with two changes: PUBLIC_ORIGIN rebuilds the URL behind a proxy, and `keys` is exported
-// so tests can install their own signing key.
+// with three changes: PUBLIC_ORIGIN rebuilds the URL behind a proxy, `keys` is exported so tests
+// can install their own signing key, and replays are tracked in the database (instances share no memory).
+import { run } from './db';
+
 const SERVER = 'https://badge-api.solana.com';
 export const keys = new Map<string, CryptoKey>();
-const seen = new Map<string, number>(); // X-Badge-Request -> time
 let fetchedAt = 0;
 
 async function badgeKey(id: string): Promise<CryptoKey | null> {
@@ -33,7 +34,7 @@ export async function fromBadge(req: Request, body: string, app: string) {
   const h = (n: string) => req.headers.get(n) ?? '';
   const time = Number(h('x-badge-time'));
   const id = h('x-badge-request');
-  if (h('x-badge-app') !== app || !(Math.abs(Date.now() - time) < 60_000) || !id || seen.has(id)) return null;
+  if (h('x-badge-app') !== app || !(Math.abs(Date.now() - time) < 60_000) || !id || id.length > 64) return null;
   const key = await badgeKey(h('x-badge-key'));
   if (!key) return null;
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)));
@@ -46,7 +47,7 @@ export async function fromBadge(req: Request, body: string, app: string) {
     return null;
   }
   if (!(await crypto.subtle.verify('Ed25519', key, sig, new TextEncoder().encode(signed)))) return null;
-  seen.set(id, time);
-  for (const [k, t] of seen) if (Date.now() - t > 60_000) seen.delete(k);
+  const fresh = await run('INSERT OR IGNORE INTO seen_requests (id, at) VALUES (?, ?)', [id, Math.floor(time / 1000)]);
+  if (fresh.rowsAffected !== 1) return null; // replay
   return { badge: h('x-badge-id'), user: h('x-badge-user') };
 }

@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 
-process.env.DB_PATH = ':memory:';
+process.env.DB_URL = `file:${require('node:os').tmpdir()}/constellation-test-${Date.now()}.db`;
 const { keys } = await import('../src/auth');
 const { handleV1, APP_ID, normalize } = await import('../src/api');
-const { runEpoch, canonical, hashrate, fmtRate, fmtHashes, roundAt, lastEndedRound, states } = await import('../src/game');
-const { DEFAULTS, q, db } = await import('../src/db');
+const { runEpoch, canonical, hashrate, fmtRate, fmtHashes, roundAt, lastEndedRound, parseState } = await import('../src/game');
+const { DEFAULTS, q, run } = await import('../src/db');
+const st = async (id: number) => parseState((await q.chain(id))!)!;
 
 const KEY_ID = 'testkey';
 let priv: CryptoKey;
@@ -29,7 +30,7 @@ async function call(badge: string, method: string, path: string, body?: unknown)
     'x-badge-request': rid, 'x-badge-key': KEY_ID, 'x-badge-signature': sig, 'content-type': 'application/json',
   };
   const req = new Request(url, { method, headers, body: text || undefined });
-  const res = await handleV1(req, new URL(url));
+  const res = await handleV1(req, new URL(url).pathname);
   return { status: res.status, data: await res.json() };
 }
 
@@ -66,9 +67,25 @@ describe('pure scoring', () => {
 });
 
 describe('api flow', () => {
+  test('a replayed request is rejected (tracked in the database, not memory)', async () => {
+    reqN = 1000;
+    expect((await call('R1', 'GET', 'me')).status).toBe(200);
+    reqN = 1000; // same X-Badge-Request again
+    expect((await call('R1', 'GET', 'me')).status).toBe(403);
+  });
+
+  test('only one request claims each epoch', async () => {
+    const { maybeEpoch } = await import('../src/game');
+    const { one } = await import('../src/db');
+    const t = Math.floor(Date.now() / 1000) + 1000;
+    await Promise.all([maybeEpoch(t), maybeEpoch(t), maybeEpoch(t + 5)]);
+    expect((await one<{ value: number }>("SELECT value FROM meta WHERE key = 'epoch_at'"))!.value).toBe(t);
+    await run("UPDATE meta SET value = 0 WHERE key = 'epoch_at'");
+  });
+
   test('rejects a bad signature', async () => {
     const req = new Request('https://game.test/v1/me', { headers: { 'x-badge-app': APP_ID } });
-    expect((await handleV1(req, new URL(req.url))).status).toBe(403);
+    expect((await handleV1(req, '/v1/me')).status).toBe(403);
   });
 
   test('create, join, link, orphan, consensus', async () => {
@@ -90,28 +107,28 @@ describe('api flow', () => {
     await call('A1', 'POST', 'report', { nearby: near(['B1', -50], ['C1', -80]), clicks: 100 });
     await call('B1', 'POST', 'report', { nearby: near(['A1', -50]), clicks: 5 });
     await call('C1', 'POST', 'report', { nearby: near(['A1', -50]), clicks: 5 });
-    runEpoch();
+    await runEpoch();
     const s = (await call('C1', 'POST', 'report', { nearby: near(['A1', -50]) })).data;
     expect(s.orphaned).toBe(true);
     expect(s.edges).toEqual([[0, 1]]);
     expect(s.hashrate).toBe(fmtRate(100 + 2 * (50 + 5))); // A capped at 50; C's clicks don't count
-    const id = q.chainByName('zero sum')!.id;
-    expect(states.get(id)!.hashrate).toBe(210);
+    const id = (await q.chainByName('zero sum'))!.id;
+    expect((await st(id)).hashrate).toBe(210);
 
     // Bridged entries never link real badges.
     await call('A1', 'POST', 'report', { nearby: near(['B1', 0, true]) });
     await call('B1', 'POST', 'report', { nearby: near(['A1', 0, true]) });
-    runEpoch();
-    expect(states.get(id)!.canon.size).toBe(0);
+    await runEpoch();
+    expect((await st(id)).canon.length).toBe(0);
 
     // Consensus: both canonical blocks clicked enough in the round that just ended.
-    db.query('UPDATE chains SET last_round = 0 WHERE id = ?').run(id); // chain predates that round
+    await run('UPDATE chains SET last_round = 0 WHERE id = ?', [id]); // chain predates that round
     const t = Math.floor(Date.now() / 1000);
     const ended = Math.floor((t - 10) / 120) * 120;
     await call('A1', 'POST', 'report', { nearby: near(['B1', -50]), round: { id: ended, clicks: 10 } });
     await call('B1', 'POST', 'report', { nearby: near(['A1', -50]), round: { id: ended, clicks: 12 } });
-    runEpoch(t);
-    expect(states.get(id)!.mult).toBe(3);
+    await runEpoch(t);
+    expect((await st(id)).mult).toBe(3);
     expect((await call('A1', 'POST', 'report', { nearby: near(['B1', -50]) })).data.last).toEqual({ at: ended, ok: true });
 
     // Board, leave.
@@ -133,16 +150,16 @@ describe('api flow', () => {
     await call('e123', 'POST', 'demo/bots', { op: 'add' });
     await call('e123', 'POST', 'report', { nearby: [{ id: 'e456', rssi: 0, bridged: true, sim: -55 }] });
     await call('e456', 'POST', 'report', { nearby: [{ id: 'e123', rssi: 0, bridged: true }] }); // DEMO_BRIDGED_RSSI
-    runEpoch();
-    const id = q.chainByName('testnet')!.id;
-    expect(states.get(id)!.canon.size).toBe(3);
+    await runEpoch();
+    const id = (await q.chainByName('testnet'))!.id;
+    expect((await st(id)).canon.length).toBe(3);
     // Weak sim breaks the link; bot still linked to e123.
     await call('e123', 'POST', 'report', { nearby: [{ id: 'e456', rssi: 0, bridged: true, sim: -90 }] });
-    runEpoch();
-    expect([...states.get(id)!.canon].sort()).toEqual([`bot-1-${id}`, 'e123']);
+    await runEpoch();
+    expect([...(await st(id)).canon].sort()).toEqual([`bot-1-${id}`, 'e123']);
     await call('e123', 'POST', 'demo/bots', { op: 'toggle_link', on: false });
-    runEpoch();
-    expect(states.get(id)!.canon.size).toBe(0);
+    await runEpoch();
+    expect((await st(id)).canon.length).toBe(0);
     // Demo board shows only demo chains.
     const board = (await call('e456', 'GET', 'board')).data;
     expect(board.rows.map((r: any) => r.name)).toEqual(['TESTNET']);

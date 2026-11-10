@@ -1,5 +1,6 @@
 // Scoring: links, canonical chain, hashrate, rounds. Pure functions first, then the epoch loop.
-import { cfg, db, q, type Block, type Chain, type Config, type Report } from './db';
+import { all, batch, cfg, q, run, type Block, type Chain, type Config, type Report } from './db';
+import type { InStatement } from '@libsql/client';
 
 export interface NearbyEntry { id: string; rssi: number; bridged: boolean; sim?: number }
 
@@ -102,10 +103,20 @@ export function lastEndedRound(ch: Chain, now: number, c: Config): number {
   return o && o + w <= now ? Math.max(regular, o) : regular;
 }
 
-// ---- epoch loop ----
+// ---- epochs ----
+// No timers on serverless: the first request after an epoch boundary claims it (an atomic UPDATE on
+// meta.epoch_at) and scores every chain. Badges report every 10 s, so epochs keep pace with play.
 
-export interface ChainState { linked: Set<string>; canon: Set<string>; edges: [number, number][]; hashrate: number; mult: number; rank: number }
-export const states = new Map<number, ChainState>();
+export interface ChainState { linked: string[]; canon: string[]; edges: [number, number][]; hashrate: number; mult: number; rank: number }
+
+export function parseState(ch: Chain): ChainState | null {
+  if (!ch.state_json) return null;
+  try {
+    return JSON.parse(ch.state_json);
+  } catch {
+    return null;
+  }
+}
 
 function parseNearby(r: Report): NearbyEntry[] {
   try {
@@ -115,82 +126,99 @@ function parseNearby(r: Report): NearbyEntry[] {
   }
 }
 
-export function runEpoch(now: number = Math.floor(Date.now() / 1000), rand: () => number = Math.random): void {
-  const c = cfg();
-  db.transaction(() => {
-    for (const ch of q.chains()) {
-      const members = q.members(ch.id);
-      const nearby = new Map<string, NearbyEntry[]>();
-      const reports = new Map<string, Report>();
-      for (const m of members) {
-        if (m.bot) continue;
-        const r = q.report(m.badge_id);
-        if (!r) continue;
-        reports.set(m.badge_id, r);
-        if (r.at >= now - c.REPORT_MAX_AGE) nearby.set(m.badge_id, parseNearby(r));
-      }
-      const links = computeLinks(members, nearby, !!ch.demo, c);
-      const { canon, edges } = canonical(members, links);
+const now_s = (): number => Math.floor(Date.now() / 1000);
 
-      // Consensus for a round that just ended.
-      const ended = lastEndedRound(ch, now, c);
-      if (ended > ch.last_round) {
-        const ok = canon.length >= 2 && canon.every((m) => {
-          if (m.bot) return rand() < c.BOT_ROUND_P;
-          const r = reports.get(m.badge_id);
-          return !!r && r.round_id === ended && r.round_clicks >= c.ROUND_CLICKS;
-        });
-        const e = every(ch, c);
-        const until = ok ? Math.ceil((ended + c.ROUND_WINDOW) / e) * e : ch.consensus_until;
-        db.query('UPDATE chains SET last_round = ?, last_round_ok = ?, consensus_until = ? WHERE id = ?')
-          .run(ended, ok ? 1 : 0, until, ch.id);
-        ch.consensus_until = until;
-      }
-
-      const mult = now < ch.consensus_until ? c.CONSENSUS_MULT : 1;
-      const clicks = canon.map((m) => (m.bot ? Math.floor(rand() * (c.BOT_CLICKS + 1)) : nearby.has(m.badge_id) ? reports.get(m.badge_id)!.clicks : 0));
-      const hr = hashrate(canon.length, clicks, mult, c);
-      if (hr > 0) db.query('UPDATE chains SET hashes = hashes + ? WHERE id = ?').run(hr * c.EPOCH_SECONDS, ch.id);
-      const linked = new Set<string>();
-      for (const k of links) for (const id of k.split('|')) linked.add(id);
-      states.set(ch.id, { linked, canon: new Set(canon.map((m) => m.badge_id)), edges, hashrate: hr, mult, rank: 0 });
-    }
-    db.query('UPDATE reports SET clicks = 0').run();
-  })();
-  for (const id of states.keys()) if (!q.chain(id)) states.delete(id);
-  rankAll();
+/** Runs an epoch if one is due and no other instance claimed it. */
+export async function maybeEpoch(now: number = now_s()): Promise<void> {
+  const c = await cfg();
+  const claim = await run("UPDATE meta SET value = ? WHERE key = 'epoch_at' AND value <= ?", [now, now - c.EPOCH_SECONDS]);
+  if (claim.rowsAffected === 1) await runEpoch(now, Math.random, c);
 }
 
-/** Rank within each world (real / demo) by hashes. */
-export function rankAll(): void {
-  const rows = db.query('SELECT id, demo FROM chains ORDER BY hashes DESC, id ASC').all() as { id: number; demo: number }[];
-  const next = [1, 1];
-  for (const r of rows) {
-    const s = states.get(r.id);
-    const rank = next[r.demo ? 1 : 0]++;
-    if (s) s.rank = rank;
+export async function runEpoch(now: number = now_s(), rand: () => number = Math.random, cfgIn?: Config): Promise<void> {
+  const c = cfgIn ?? (await cfg());
+  const [chains, blocks, reports] = await Promise.all([
+    q.chains(),
+    all<Block>('SELECT * FROM blocks WHERE chain_id IS NOT NULL ORDER BY height'),
+    all<Report>('SELECT * FROM reports'),
+  ]);
+  const byChain = new Map<number, Block[]>();
+  for (const b of blocks) byChain.set(b.chain_id!, [...(byChain.get(b.chain_id!) ?? []), b]);
+  const reportOf = new Map(reports.map((r) => [r.badge_id, r]));
+
+  const stmts: InStatement[] = [];
+  const results: { ch: Chain; state: ChainState; hashes: number }[] = [];
+  for (const ch of chains) {
+    const members = byChain.get(ch.id) ?? [];
+    const nearby = new Map<string, NearbyEntry[]>();
+    for (const m of members) {
+      const r = reportOf.get(m.badge_id);
+      if (!m.bot && r && r.at >= now - c.REPORT_MAX_AGE) nearby.set(m.badge_id, parseNearby(r));
+    }
+    const links = computeLinks(members, nearby, !!ch.demo, c);
+    const { canon, edges } = canonical(members, links);
+
+    // Consensus for a round that just ended.
+    let until = ch.consensus_until;
+    const ended = lastEndedRound(ch, now, c);
+    if (ended > ch.last_round) {
+      const ok = canon.length >= 2 && canon.every((m) => {
+        if (m.bot) return rand() < c.BOT_ROUND_P;
+        const r = reportOf.get(m.badge_id);
+        return !!r && r.round_id === ended && r.round_clicks >= c.ROUND_CLICKS;
+      });
+      if (ok) until = Math.ceil((ended + c.ROUND_WINDOW) / every(ch, c)) * every(ch, c);
+      stmts.push({ sql: 'UPDATE chains SET last_round = ?, last_round_ok = ?, consensus_until = ? WHERE id = ?', args: [ended, ok ? 1 : 0, until, ch.id] });
+    }
+
+    const mult = now < until ? c.CONSENSUS_MULT : 1;
+    const clicks = canon.map((m) => (m.bot ? Math.floor(rand() * (c.BOT_CLICKS + 1)) : nearby.has(m.badge_id) ? reportOf.get(m.badge_id)!.clicks : 0));
+    const hr = hashrate(canon.length, clicks, mult, c);
+    const linked = new Set<string>();
+    for (const k of links) for (const id of k.split('|')) linked.add(id);
+    results.push({
+      ch,
+      hashes: ch.hashes + hr * c.EPOCH_SECONDS,
+      state: { linked: [...linked], canon: canon.map((m) => m.badge_id), edges, hashrate: hr, mult, rank: 0 },
+    });
+    // Every member's clicks are spent this epoch, counted or not (orphans mine nothing).
+    for (const m of members) {
+      const r = reportOf.get(m.badge_id);
+      if (r && r.clicks > 0) stmts.push({ sql: 'UPDATE reports SET clicks = MAX(0, clicks - ?) WHERE badge_id = ?', args: [r.clicks, m.badge_id] });
+    }
   }
+
+  // Rank within each world (real / demo) by hashes.
+  const next = [1, 1];
+  for (const r of [...results].sort((a, b) => b.hashes - a.hashes || a.ch.id - b.ch.id)) r.state.rank = next[r.ch.demo ? 1 : 0]++;
+  for (const r of results) {
+    stmts.push({ sql: 'UPDATE chains SET hashes = hashes + ?, state_json = ? WHERE id = ?', args: [r.hashes - r.ch.hashes, JSON.stringify(r.state), r.ch.id] });
+  }
+  stmts.push({ sql: 'DELETE FROM seen_requests WHERE at < ?', args: [now - 120] });
+  stmts.push({ sql: 'DELETE FROM join_requests WHERE at < ?', args: [now - c.JOIN_WINDOW] });
+  stmts.push({ sql: 'DELETE FROM join_accepts WHERE at < ?', args: [now - c.JOIN_WINDOW] });
+  await batch(stmts);
 }
 
 /** The chain screen's state for one badge (the /v1/report response). */
-export function stateFor(ch: Chain, badge: string, now: number): Record<string, unknown> {
-  const c = cfg();
-  const s = states.get(ch.id);
-  const members = q.members(ch.id);
-  const fresh = q.chain(ch.id) ?? ch;
+export async function stateFor(chainId: number, badge: string, now: number, c: Config): Promise<Record<string, unknown> | null> {
+  const [ch, members] = await Promise.all([q.chain(chainId), q.members(chainId)]);
+  if (!ch) return null;
+  const s = parseState(ch);
+  const linked = new Set(s?.linked), canon = new Set(s?.canon);
   return {
-    chain: fresh.display_name,
+    chain: ch.display_name,
     blocks: members.map((m) => ({
       id: m.badge_id, h: m.height, handle: m.handle, star: m.star,
-      linked: !!s?.linked.has(m.badge_id), canon: !!s?.canon.has(m.badge_id),
+      linked: linked.has(m.badge_id), canon: canon.has(m.badge_id),
     })),
     edges: s?.edges ?? [],
     hashrate: fmtRate(s?.hashrate ?? 0),
     mult: s?.mult ?? 1,
-    hashes: fmtHashes(fresh.hashes),
+    hashes: fmtHashes(ch.hashes),
     rank: s?.rank ?? 0,
-    orphaned: members.length > 1 && !!s && !s.canon.has(badge),
-    round: { at: roundAt(fresh, now, c), len: c.ROUND_WINDOW },
-    last: { at: fresh.last_round, ok: !!fresh.last_round_ok },
+    orphaned: members.length > 1 && !!s && !canon.has(badge),
+    round: { at: roundAt(ch, now, c), len: c.ROUND_WINDOW },
+    last: { at: ch.last_round, ok: !!ch.last_round_ok },
   };
 }

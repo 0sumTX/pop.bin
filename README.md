@@ -4,25 +4,29 @@ Team game for the Breakpoint 2026 badge: chains of badges mine hashes by standin
 
 ```
 badge/    the Solana OS app (main.lua, app.json, lib/)        → upload this folder at /apps/submit
-server/   Bun + bun:sqlite: /v1 badge API, /admin, scoring loop
+server/   Bun + libSQL/Turso on Vercel: /v1 badge API, /admin, scoring
 tools/    badge_sim.lua: headless smoke test of the badge app (not shipped)
 ```
 
 ## Server
 
+Live at **https://constellation-sooty.vercel.app** (Vercel project `constellation`, Bun runtime, Turso for storage).
+
 ```sh
 cd server && bun install
-ADMIN_PASSWORD=... PUBLIC_ORIGIN=https://your.host DB_PATH=/data/constellation.db bun src/index.ts
-bun test                     # scoring, auth, joins, demo isolation
+bun test                                   # scoring, auth, joins, demo isolation, replay, epoch claim
+ADMIN_PASSWORD=pw bun src/server.ts        # local, stores in ./constellation.db
+vercel deploy --prod                       # from server/
 ```
+
+No timers on serverless: the first request after each epoch boundary claims it (atomic UPDATE on `meta.epoch_at`) and scores every chain. Badges report every 10 s, which keeps epochs on time.
 
 | env | |
 |---|---|
-| `ADMIN_PASSWORD` | basic-auth password for `/admin` (unset = admin disabled) |
-| `PUBLIC_ORIGIN` | your public `https://` origin. Needed behind a proxy, because the signature covers the URL the badge asked for |
-| `DB_PATH` | SQLite file on the persistent disk (default `./constellation.db`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | set by the Turso Marketplace integration (local default: `file:constellation.db`, or `DB_URL`) |
+| `ADMIN_PASSWORD` | basic-auth password for `/admin` (unset = admin disabled). Production value is in `server/.env.admin` (gitignored) |
+| `PUBLIC_ORIGIN` | public `https://` origin. The badge signature covers the URL, and Vercel's internal `req.url` differs |
 | `APP_ID` | store app id (default `constellation`) |
-| `PORT` | default 3000 |
 
 Every tunable in §8 can be edited live at `/admin`.
 

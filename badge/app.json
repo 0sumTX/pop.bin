@@ -8,5 +8,5 @@
   "accent": "00FF41",
   "category": "games",
   "permissions": ["wifi", "led", "mesh", "http"],
-  "hosts": ["constellation.example.com"]
+  "hosts": ["constellation-sooty.vercel.app"]
 }
